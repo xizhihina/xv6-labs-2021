@@ -432,3 +432,35 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+void 
+vmprint(pagetable_t pagetable,uint64 depth)//页表，递归深度
+{
+  if (depth>2)
+  {
+    return;
+  }
+//   page table 0x0000000087f6e000
+//  ..0: pte 0x0000000021fda801 pa 0x0000000087f6a000
+  if(depth==0)printf("page table %p\n",pagetable);//Use %p in your printf calls to print out full 64-bit hex PTEs and addresses as shown in the example.
+  char buf[12];
+  if(depth==0){
+    strncpy(buf,"..",12);
+  }
+  if(depth==1){
+    strncpy(buf,".. ..",12);
+  }
+  if(depth==2){
+    strncpy(buf,".. .. ..",12);
+  }
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V){
+      // this PTE points to a lower-level page table.
+      printf("%s%d: pte %p pa %p\n",buf,i,pte,PTE2PA(pte));
+      uint64 child = PTE2PA(pte);
+      vmprint((pagetable_t) child,depth+1);
+    }
+  }
+}
