@@ -464,3 +464,18 @@ vmprint(pagetable_t pagetable,uint64 depth)//页表，递归深度
     }
   }
 }
+
+int pgaccess(pagetable_t pagetable,uint64 va){
+  pte_t *pte;
+  if(va >= MAXVA)
+    return 0;
+
+  pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return 0;
+  if((*pte & PTE_A) != 0){
+    *pte=*pte&(~PTE_A/*111110*/);//将第六位置为0
+    return 1;
+  }
+  return 0;
+}
