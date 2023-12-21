@@ -105,4 +105,10 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  int ticks;
+  int tickscnt;
+  uint64 handler;//函数slow_handler地址
+  struct trapframe *tick_trapframe;//临时保存trapframe，用于恢复现场
+  int handler_excuting;//判断是否正在运行handler函数，避免重复调用
 };

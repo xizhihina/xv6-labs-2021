@@ -77,8 +77,18 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+    if(p->ticks>0){
+      p->tickscnt++;
+      if(p->handler_excuting==0 && p->tickscnt>p->ticks){
+        p->tickscnt=0;
+        *p->tick_trapframe=*p->trapframe;//保存frame，在sigreturn中恢复
+        p->trapframe->epc=p->handler;
+        p->handler_excuting=1;
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }

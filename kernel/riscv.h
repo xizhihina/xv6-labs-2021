@@ -291,6 +291,14 @@ intr_get()
   return (x & SSTATUS_SIE) != 0;
 }
 
+static inline uint64//The GCC compiler stores the frame pointer of the currently executing function in the register s0. Add the following function to kernel/riscv.h:
+r_fp()
+{
+  uint64 x;
+  asm volatile("mv %0, s0" : "=r" (x) );
+  return x;
+}
+
 static inline uint64
 r_sp()
 {
