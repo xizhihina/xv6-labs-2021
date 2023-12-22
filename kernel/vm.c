@@ -303,7 +303,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -311,14 +311,17 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    *pte=*pte & ~PTE_W;//freewalk中有类似用法，清除写权限
+    *pte=*pte | PTE_COW;//将cow位置为1
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // if((mem = kalloc()) == 0)//新页表页(大小4096)第0个位置上的物理地址
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){//为起始地址为va的虚拟地址创建pte，该虚拟地址引用起始地址为pa的物理地址。Va和size可能没有对齐页面。成功时返回0，如果walk()无法分配所需的页表页则返回-1。
+      // kfree(mem);
       goto err;
     }
+    incr((void*)pa);
   }
   return 0;
 
@@ -326,6 +329,45 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
+
+// PTE是否是COW映射
+int is_cow_fault(pagetable_t pagetable,uint64 va){
+  if(va>=MAXVA){
+    return 0;
+  }
+  pte_t *pte;
+  pte = walk(pagetable, va, 0);
+  if((*pte & PTE_V) == 0)
+    return 0;
+  if((*pte & PTE_U) == 0)
+    return 0;
+  if(*pte & PTE_COW)
+    return 1;
+  return 0;
+}
+
+int cow_alloc(pagetable_t pagetable,uint64 va){
+  pte_t *pte;
+  va=PGROUNDDOWN(va);//缺少这行报错panic: uvmunmap: not aligned
+  pte = walk(pagetable, va, 0);
+  uint64 pa=PTE2PA(*pte);
+  int flags = PTE_FLAGS(*pte);
+  char *mem;
+  
+  if((mem = kalloc()) == 0){//新页表页(大小4096)第0个位置上的物理地址
+    return -1;
+  }
+  memmove(mem,(char*)pa,PGSIZE);//mem=pa
+  uvmunmap(pagetable,va,1,1);//删除从va开始的映射的页。va必须对齐。映射必须存在。可选择释放物理内存。
+  flags &= ~PTE_COW;
+  flags |= PTE_W;
+  if(mappages(pagetable, va, PGSIZE, (uint64)mem, flags) < 0){//为起始地址为va的虚拟地址创建pte，该虚拟地址引用起始地址为pa的物理地址。Va和size可能没有对齐页面。成功时返回0，如果walk()无法分配所需的页表页则返回-1。
+    kfree(mem);
+    return -1;
+  }
+  return 0;
+}
+
 
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
@@ -350,6 +392,12 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    if(is_cow_fault(pagetable,va0)){
+      if(cow_alloc(pagetable,va0)<0){
+        printf("copyout: cowalloc fail!\n");
+        return -1;
+      }
+    }
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
